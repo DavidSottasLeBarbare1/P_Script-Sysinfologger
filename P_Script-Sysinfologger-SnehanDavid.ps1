@@ -12,85 +12,93 @@
  	Raisons: -
  	*****************************************************************************
 .SYNOPSIS
-	Information succincte concernant l'utilité du script, comme un titre
+	Collecte d'informations système d'une machine distante
  	
 .DESCRIPTION
-    Description plus détaillée du script, avec les actions et les tests effectuées ainsi que les résultats possibles
+    Création d'un fichier journal log contenant les informations systèmes de la machine distante tel que : 
+    son nom, version de l'OS, l'utilisation du disque, capacité de la RAM, liste des programmes installés et les caractèristiques du CPU grâce à son adresse IP
   	
 .PARAMETER IP
-    Description du premier paramètre avec les limites et contraintes
+    IP de la machine distante. Elle sert à lancer la session CIM
 	
-.PARAMETER Param2
-    Description du deuxième paramètre avec les limites et contraintes
- 	
-.PARAMETER Param3
-    Description du troisième paramètre avec les limites et contraintes
-
 .OUTPUTS
-	Ce qui est produit par le script, comme des fichiers et des modifications du système
+	Un fichier journal nommé sysloginfo.log contenant les informations.
 	
 .EXAMPLE
-	.\CanevasV3.ps1 -Param1 Toto -Param2 Titi -Param3 Tutu
-	La ligne que l'on tape pour l'exécution du script avec un choix de paramètres
+	
 	Résultat : par exemple un fichier, une modification, un message d'erreur
 	
 .EXAMPLE
-	.\CanevasV3.ps1
-	Résultat : Sans paramètre, affichage de l'aide
+	.\P_Script-Sysinfologger-SnehanDavid.ps1 -IP 169.254.249.9
+
+	Résultat : Il sera affiché dans le fichier .log : 
+---------------------------------------------------------------------------------
+|                                 SYSINFO LOGGER                                |
+|-------------------------------------------------------------------------------|
+| Log date: 05/06/2025 09:28:00						                        	|
+---------------------------------------------------------------------------------
+
+Name : PC2
+
+OS Version : 10.0.19044
+
+RAM : 4 GB
+
+CPU : Win32_Processor : Intel64 Family 6 Model 167 Stepping 1 (DeviceID = "CPU0")
+
+Program : VirtualBox PowerShell 7-x64 Microsoft Update Health Tools CIM Explorer
+
+Disk : C: 64.13% S: 0.31% T: 0.25%
 	
-.LINK
-    D'autres scripts utilisés dans ce script
 #>
 
-<# Le nombre de paramètres doit correspondre à ceux définis dans l'en-tête
-   Il est possible aussi qu'il n'y ait pas de paramètres mais des arguments
-   Un paramètre peut être typé : [string]$Param1
-   Un paramètre peut être initialisé : $Param2="Toto"
-   Un paramètre peut être obligatoire : [Parameter(Mandatory=$True][string]$Param3
-#>
 # La définition des paramètres se trouve juste après l'en-tête et un commentaire sur le.s paramètre.s est obligatoire 
-param($IP, $Param2, $Param3)
-
+param($IP)
+ 
 ###################################################################################################################
 # Zone de définition des variables et fonctions, avec exemples
 # Commentaires pour les variables
-$Date = Get-Date
-###################################################################################################################
-# Zone de tests comme les paramètres renseignés ou les droits administrateurs
-
-# Affiche l'aide si un ou plusieurs paramètres ne sont par renseignés, "safe guard clauses" permet d'optimiser l'exécution et la lecture des scripts
-<# if(!$IP -or !$Credential -or !$Param3)
-{
-    Get-Help $MyInvocation.Mycommand.Path
-	exit
-} #>
+$Date = Get-Date -Format "yyyy.MM.dd hh:mm:ss"             #Variable pour la date et l'heure actuelle
 
 ###################################################################################################################
 # Corps du script
-Set-Item WSMan:\localhost\Client\TrustedHosts $IP -Force
+if ($IP)
+{
+    $CIM = New-CimSession -ComputerName $IP
+}
+else
+{
+    throw [System.Management.Automation.PSArgumentException]::New("Veuillez entrer une IP")
+}
+if( -not $CIM)
+{
+    throw [System.Management.Automation.PSInvalidCastException]::New("IP non valide")
+}
 
-$CIM = New-CimSession -ComputerName $IP
+$ComputerSystem = (Get-CimInstance -CimSession $CIM -Class CIM_ComputerSystem)
 
-$ComputerName = (Get-CimInstance -CimSession $CIM -Class CIM_ComputerSystem).Name
-
+$ComputerName = $ComputerSystem.Name
 
 $OS = (Get-CimInstance -CimSession $CIM -Class CIM_OperatingSystem).Version
 
-$RAM = [math]::round((Get-CimInstance CIM_ComputerSystem).TotalPhysicalMemory / 1GB, 2)
+$RAM = [math]::round($ComputerSystem.TotalPhysicalMemory / 1GB, 2)
 
-$CPU = Get-CimInstance -Class CIM_Processor
+$CPU = Get-CimInstance -CimSession $CIM -Class CIM_Processor
 
 $AppRunning  = (Get-CimInstance -CimSession $CIM -Class CIM_Product).name
 
 $diskUsage = Get-CimInstance -CimSession $CIM -ClassName CIM_LogicalDisk | Where-Object {$_.DriveType -eq 3}
 
-Write-Output("---------------------------------------------------------------------------------
+Write-Output(
+"---------------------------------------------------------------------------------
 |                                 SYSINFO LOGGER                                |
 |-------------------------------------------------------------------------------|
-| Log date:$Date`t`t`t`t`t`t`t|
+| Log date: $Date`t`t`t`t`t`t`t|
 ---------------------------------------------------------------------------------`n
-Name : $ComputerName`n`nOS Version : $OS`n`nRAM : $RAM`n`nCPU : $CPU`n`nProgram : $AppRunning`n`nDisk : $($diskUsage.DeviceID) $($diskUsage| ForEach-Object {"($($_.Size - $_.FreeSpace)* 100)/$_.Size%"})") >> sysloginfo.log  
-
+Name : $ComputerName`n
+OS Version : $OS`n
+RAM : $RAM GB`n
+CPU : $CPU`n
+Program : $AppRunning`n
+Disk : $($diskUsage| ForEach-Object {"$($_.DeviceID) $($([math]::Round(($_.Size - $_.FreeSpace)/$_.Size * 100, 2)))%"})") >> sysloginfo.log
 Remove-CimSession -CimSession $CIM
-
-# Ce que fait le script
