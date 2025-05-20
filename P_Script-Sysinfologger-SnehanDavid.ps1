@@ -7,9 +7,9 @@
     Date:	03.04.2025
  	*****************************************************************************
     Modifications
- 	Date  : -
- 	Auteur: -
- 	Raisons: -
+ 	Date  : 07.05.2025
+ 	Auteur: David
+ 	Raisons: Finalisation du script
  	*****************************************************************************
 .SYNOPSIS
 	Collecte d'informations système d'une machine distante
@@ -58,47 +58,57 @@ param($IP)
 ###################################################################################################################
 # Zone de définition des variables et fonctions, avec exemples
 # Commentaires pour les variables
-$Date = Get-Date -Format "yyyy.MM.dd hh:mm:ss"             #Variable pour la date et l'heure actuelle
+$date = Get-Date -Format "yyyy.MM.dd hh:mm:ss"             #Variable pour la date et l'heure actuelle
 
 ###################################################################################################################
 # Corps du script
-if ($IP)
-{
-    $CIM = New-CimSession -ComputerName $IP
+
+# Vérifie de la version de powershell utilisée
+#Requires -Version 7
+
+if ($IP) {
+    if (Test-Connection -ComputerName $IP -Count 1 -Quiet) {
+        $cim = New-CimSession -ComputerName $IP
+    }
+    else {
+        "$IP est injoignable"
+    }
 }
-else
-{
+else {
     throw [System.Management.Automation.PSArgumentException]::New("Veuillez entrer une IP")
 }
-if( -not $CIM)
-{
-    throw [System.Management.Automation.PSInvalidCastException]::New("IP non valide")
+
+if (-not $cim) {
+    throw [System.Management.Automation.PSInvalidCastException]::New("Machine injoignable")
 }
 
-$ComputerSystem = (Get-CimInstance -CimSession $CIM -Class CIM_ComputerSystem)
+$computerSystem = (Get-CimInstance -CimSession $cim -Class CIM_ComputerSystem)
 
-$ComputerName = $ComputerSystem.Name
+$computerName = $computerSystem.Name
 
-$OS = (Get-CimInstance -CimSession $CIM -Class CIM_OperatingSystem).Version
+$os = (Get-CimInstance -CimSession $cim -Class CIM_OperatingSystem).Version
 
-$RAM = [math]::round($ComputerSystem.TotalPhysicalMemory / 1GB, 2)
+$ram = [math]::round($computerSystem.TotalPhysicalMemory / 1GB, 2)
 
-$CPU = Get-CimInstance -CimSession $CIM -Class CIM_Processor
+$cpu = (Get-CimInstance -CimSession $cim -Class CIM_Processor).Name
 
-$AppRunning  = (Get-CimInstance -CimSession $CIM -Class CIM_Product).name
+$appsRunning = Get-CimInstance -CimSession $cim -Class CIM_Product
 
-$diskUsage = Get-CimInstance -CimSession $CIM -ClassName CIM_LogicalDisk | Where-Object {$_.DriveType -eq 3}
+$diskUsage = Get-CimInstance -CimSession $cim -ClassName CIM_LogicalDisk | Where-Object { $_.DriveType -eq 3 }
+
 
 Write-Output(
 "---------------------------------------------------------------------------------
-|                                 SYSINFO LOGGER                                |
+|`t`t`t`tSYSINFO LOGGER`t`t`t`t`t|
 |-------------------------------------------------------------------------------|
-| Log date: $Date`t`t`t`t`t`t`t|
+| Log date: $date`t`t`t`t`t`t`t|
 ---------------------------------------------------------------------------------`n
-Name : $ComputerName`n
-OS Version : $OS`n
-RAM : $RAM GB`n
-CPU : $CPU`n
-Program : $AppRunning`n
+
+Name : $computerName`n
+OS Version : $os`n
+RAM : $ram GB`n
+CPU : $cpu`n
+Programs : $($appsRunning | ForEach-Object {"$($_.Name), "})`n
 Disk : $($diskUsage| ForEach-Object {"$($_.DeviceID) $($([math]::Round(($_.Size - $_.FreeSpace)/$_.Size * 100, 2)))%"})") >> sysloginfo.log
-Remove-CimSession -CimSession $CIM
+
+Remove-CimSession -CimSession $cim
